@@ -1,5 +1,4 @@
 flask
 yt-dlp
 requests
-youtube_dl
 ffmpeg-python
