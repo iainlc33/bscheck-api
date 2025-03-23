@@ -1,58 +1,77 @@
-
 from flask import Flask, request, jsonify
-import os
-import uuid
 import yt_dlp
-import subprocess
+import os
 import requests
 
 app = Flask(__name__)
 
-@app.route("/extract", methods=["POST"])
-def extract_audio():
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "No URL provided"}), 400
+# Temporary directory to store files
+TEMP_DIR = './temp'
+if not os.path.exists(TEMP_DIR):
+    os.makedirs(TEMP_DIR)
 
-    url = data["url"]
-    video_id = str(uuid.uuid4())
-    video_filename = f"{video_id}.mp4"
-    mp3_filename = f"{video_id}.mp3"
-
-    ydl_opts = {
-        "format": "best",
-        "outtmpl": video_filename,
-        "quiet": True,
-    }
-
+def download_audio(url):
     try:
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(TEMP_DIR, '%(id)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegAudioConvertor',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': False
+        }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            info_dict = ydl.extract_info(url, download=True)
+            video_id = info_dict['id']
+            file_path = os.path.join(TEMP_DIR, f'{video_id}.mp3')
+            return file_path
     except Exception as e:
-        return jsonify({"error": f"Video download failed: {str(e)}"}), 500
+        return str(e)
 
+def upload_file(file_path):
     try:
-        subprocess.run([
-            "ffmpeg", "-i", video_filename,
-            "-vn", "-acodec", "libmp3lame",
-            mp3_filename
-        ], check=True)
-    except subprocess.CalledProcessError as e:
-        return jsonify({"error": f"Audio extraction failed: {str(e)}"}), 500
-
-    try:
-        with open(mp3_filename, 'rb') as f:
-            upload = requests.put(f"https://transfer.sh/{mp3_filename}", data=f)
-            download_url = upload.text.strip()
+        with open(file_path, 'rb') as f:
+            response = requests.put(
+                'https://transfer.sh/' + os.path.basename(file_path),
+                files={'file': f}
+            )
+            return response.text
     except Exception as e:
-        return jsonify({"error": f"Upload failed: {str(e)}"}), 500
-    finally:
-        if os.path.exists(video_filename):
-            os.remove(video_filename)
-        if os.path.exists(mp3_filename):
-            os.remove(mp3_filename)
+        return str(e)
 
-    return jsonify({"audio_url": download_url})
+@app.route('/')
+def index():
+    return "TikTok Audio Extractor API"
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+@app.route('/extract', methods=['POST'])
+def extract_audio():
+    try:
+        data = request.get_json()
+        url = data.get('url')
+
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+
+        # Download audio
+        file_path = download_audio(url)
+        if file_path.startswith('Error'):
+            return jsonify({'error': file_path}), 500
+
+        # Upload file to transfer.sh
+        file_url = upload_file(file_path)
+        if file_url.startswith('Error'):
+            return jsonify({'error': file_url}), 500
+
+        # Delete the temporary file after upload
+        os.remove(file_path)
+
+        return jsonify({'download_link': file_url}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
