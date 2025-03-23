@@ -1,53 +1,45 @@
 from flask import Flask, request, jsonify
-import youtube_dl
-import os
-import tempfile
+import yt_dlp  # Updated to use yt-dlp
 import ffmpeg
 
 app = Flask(__name__)
 
-# Directory to save downloaded audio files
-DOWNLOAD_PATH = tempfile.mkdtemp()
-
 @app.route('/')
-def home():
-    return jsonify({'message': 'Server is running!'})
+def index():
+    return "Welcome to the TikTok audio extractor!"
 
 @app.route('/extract', methods=['POST'])
 def extract_audio():
-    # Get the URL from the request
     data = request.get_json()
-    video_url = data.get('url')
-
-    if not video_url:
+    if not data or 'url' not in data:
         return jsonify({'error': 'No URL provided'}), 400
 
-    # Log the received URL
-    print(f"Received URL: {video_url}")
-
-    # Configure youtube-dl options for extracting audio
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'extractaudio': True,
-        'audioquality': 1,
-        'outtmpl': os.path.join(DOWNLOAD_PATH, '%(id)s.%(ext)s'),
-        'quiet': True,
-    }
+    url = data['url']
 
     try:
-        # Download the audio using youtube-dl
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=True)
-            audio_file_path = os.path.join(DOWNLOAD_PATH, f"{info_dict['id']}.mp3")
+        # Set up options for yt-dlp
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': False,  # Set to False for verbose logging
+            'verbose': True  # Detailed logs for debugging
+        }
 
-            # Check if the audio file is created successfully
-            if os.path.exists(audio_file_path):
-                return jsonify({'message': 'Audio extracted successfully', 'file_path': audio_file_path}), 200
-            else:
-                return jsonify({'error': 'Audio extraction failed'}), 500
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            result = ydl.extract_info(url, download=True)
+
+        # Return the extracted information
+        if 'url' in result:
+            return jsonify({'audio_url': result['url']}), 200
+        else:
+            return jsonify({'error': 'Failed to extract audio'}), 500
+
     except Exception as e:
-        # Return error if the extraction fails
-        return jsonify({'error': f'Error extracting audio: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=8080)
