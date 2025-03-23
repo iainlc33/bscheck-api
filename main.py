@@ -9,7 +9,7 @@ def extract_audio_from_video(url):
     ydl_opts = {
         'format': 'bestaudio/best',
         'postprocessors': [{
-            'key': 'FFmpegExtractAudio',  # Changed from 'FFmpegAudio' to 'FFmpegExtractAudio'
+            'key': 'FFmpegExtractAudio',  # Explicitly use FFmpegExtractAudio to ensure no issues with FFmpegAudioPP
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
@@ -19,14 +19,16 @@ def extract_audio_from_video(url):
         'outtmpl': 'downloads/%(id)s.%(ext)s',  # Save the file to a specific directory
     }
 
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        try:
+    # Force an update of yt-dlp to the latest version
+    try:
+        ydl_opts['postprocessors'][0]['key'] = 'FFmpegExtractAudio'
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             # Extract the audio from the video URL
             info_dict = ydl.extract_info(url, download=True)
             audio_file_path = f"downloads/{info_dict['id']}.mp3"
             return audio_file_path
-        except Exception as e:
-            return str(e)
+    except Exception as e:
+        return str(e)
 
 @app.route('/extract', methods=['POST'])
 def extract_audio():
