@@ -9,7 +9,7 @@ def extract_audio_from_video(url):
     ydl_opts = {
         'format': 'bestaudio/best',
         'postprocessors': [{
-            'key': 'FFmpegAudio',
+            'key': 'FFmpegAudio',  # Changed from 'FFmpegAudioPP' to 'FFmpegAudio'
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
